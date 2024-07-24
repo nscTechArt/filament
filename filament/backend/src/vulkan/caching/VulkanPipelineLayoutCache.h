@@ -23,6 +23,8 @@
 #include <utils/Hash.h>
 
 #include <tsl/robin_map.h>
+#include <absl/container/flat_hash_map.h>
+#include <absl/strings/string_view.h>
 
 namespace filament::backend {
 
@@ -36,8 +38,8 @@ public:
     void terminate() noexcept;
 
     struct PushConstantKey {
-        uint8_t stage;// We have one set of push constant per shader stage (fragment, vertex, etc).
-        uint8_t size;
+        uint8_t stage = 0;// We have one set of push constant per shader stage (fragment, vertex, etc).
+        uint8_t size = 0;
         // Note that there is also an offset parameter for push constants, but
         // we always assume our update range will have the offset 0.
     };
@@ -48,8 +50,10 @@ public:
         DescriptorSetLayoutArray descSetLayouts = {};                   // 8 * 3
         PushConstantKey pushConstant[Program::SHADER_TYPE_COUNT] = {};  // 2 * 3
         uint16_t padding = 0;
+//        uint64_t padding1 = 0;
     };
     static_assert(sizeof(PipelineLayoutKey) == 32);
+//    static_assert(sizeof(PipelineLayoutKey) == 40);
 
     VulkanPipelineLayoutCache(VulkanPipelineLayoutCache const&) = delete;
     VulkanPipelineLayoutCache& operator=(VulkanPipelineLayoutCache const&) = delete;
@@ -73,7 +77,10 @@ private:
         }
     };
 
-    using PipelineLayoutMap = tsl::robin_map<PipelineLayoutKey, PipelineLayoutCacheEntry,
+//    using PipelineLayoutMap = tsl::robin_map<PipelineLayoutKey, PipelineLayoutCacheEntry,
+//            PipelineLayoutKeyHashFn, PipelineLayoutKeyEqual>;
+
+    using PipelineLayoutMap = absl::flat_hash_map<PipelineLayoutKey, PipelineLayoutCacheEntry,
             PipelineLayoutKeyHashFn, PipelineLayoutKeyEqual>;
 
     VkDevice mDevice;

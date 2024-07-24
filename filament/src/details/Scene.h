@@ -43,6 +43,7 @@
 #include <stddef.h>
 
 #include <tsl/robin_set.h>
+#include <absl/container/flat_hash_set.h>
 
 #include <memory>
 
@@ -213,7 +214,8 @@ private:
      * (a vector<> could work, but removes would be O(n)). robin_set<> iterates almost as
      * nicely as vector<>, which is a good compromise.
      */
-    tsl::robin_set<utils::Entity, utils::Entity::Hasher> mEntities;
+//    tsl::robin_set<utils::Entity, utils::Entity::Hasher> mEntities;
+    absl::flat_hash_set<utils::Entity, utils::Entity::Hasher> mEntities;
 
 
     /*
