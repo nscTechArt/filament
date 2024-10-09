@@ -593,6 +593,7 @@ struct VulkanPlatformPrivate {
 
     bool mSharedContext = false;
     bool mForceXCBSwapchain = false;
+    std::once_flag mCalledDeprecatedRecreateFlag;
 };
 
 void VulkanPlatform::terminate() {
@@ -786,8 +787,9 @@ bool VulkanPlatform::hasResized(SwapChainPtr handle) {
     SWAPCHAIN_RET_FUNC(hasResized, handle, )
 }
 
-VkResult VulkanPlatform::recreate(SwapChainPtr handle) {
-    SWAPCHAIN_RET_FUNC(recreate, handle, )
+VkResult VulkanPlatform::recreate(SwapChainPtr handle,
+        std::shared_ptr<VulkanFenceStatus> lastCommandBufferStatus) {
+    SWAPCHAIN_RET_FUNC(recreate, handle, lastCommandBufferStatus)
 }
 
 void VulkanPlatform::destroy(SwapChainPtr handle) {

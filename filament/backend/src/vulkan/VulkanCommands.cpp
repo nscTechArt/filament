@@ -37,14 +37,6 @@ namespace filament::backend {
 using Timestamp = VulkanGroupMarkers::Timestamp;
 #endif
 
-VulkanCmdFence::VulkanCmdFence(VkFence ifence)
-    : fence(ifence) {
-    // Internally we use the VK_INCOMPLETE status to mean "not yet submitted". When this fence gets
-    // submitted, its status changes to VK_NOT_READY. Finally, when the GPU actually finishes
-    // executing the command buffer, the status changes to VK_SUCCESS.
-    status.store(VK_INCOMPLETE);
-}
-
 VulkanCommandBuffer::VulkanCommandBuffer(VulkanResourceAllocator* allocator, VkDevice device,
         VkCommandPool pool)
     : mResourceManager(allocator),
@@ -137,12 +129,16 @@ VulkanCommands::VulkanCommands(VkDevice device, VkQueue queue, uint32_t queueFam
       mPool(createPool(mDevice, queueFamilyIndex)),
       mContext(context),
       mStorage(CAPACITY) {
-    VkSemaphoreCreateInfo sci{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+    VkSemaphoreCreateInfo sci = {
+            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+    };
     for (auto& semaphore: mSubmissionSignals) {
         vkCreateSemaphore(mDevice, &sci, nullptr, &semaphore);
     }
 
-    VkFenceCreateInfo fenceCreateInfo{.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+    VkFenceCreateInfo fenceCreateInfo = {
+            .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+    };
     for (auto& fence: mFences) {
         vkCreateFence(device, &fenceCreateInfo, VKALLOC, &fence);
     }
@@ -203,7 +199,7 @@ VulkanCommandBuffer& VulkanCommands::get() {
     // Note that the fence wrapper uses shared_ptr because a DriverAPI fence can also have ownership
     // over it.  The destruction of the low-level fence occurs either in VulkanCommands::gc(), or in
     // VulkanDriver::destroyFence(), both of which are safe spots.
-    currentbuf->fence = std::make_shared<VulkanCmdFence>(mFences[mCurrentCommandBufferIndex]);
+    currentbuf->fence = { mFences[mCurrentCommandBufferIndex] };
 
     // Begin writing into the command buffer.
     const VkCommandBufferBeginInfo binfo{
@@ -288,20 +284,19 @@ bool VulkanCommands::flush() {
             .pSignalSemaphores = &renderingFinished,
     };
 
+    auto& cmdfence = currentbuf->fence;
+
 #if FVK_ENABLED(FVK_DEBUG_COMMAND_BUFFER)
     FVK_LOGI << "Submitting cmdbuffer=" << cmdbuffer
            << " wait=(" << signals[0] << ", " << signals[1] << ") "
            << " signal=" << renderingFinished
-           << " fence=" << currentbuf->fence->fence
+           << " fence=" << cmdfence.vkfence
            << utils::io::endl;
 #endif
 
-    auto& cmdfence = currentbuf->fence;
     UTILS_UNUSED_IN_RELEASE VkResult result = VK_SUCCESS;
-    {
-        auto scope = cmdfence->setValue(VK_NOT_READY);
-        result = vkQueueSubmit(mQueue, 1, &submitInfo, cmdfence->getFence());
-    }
+    cmdfence.status->set(VK_NOT_READY);
+    result = vkQueueSubmit(mQueue, 1, &submitInfo, cmdfence.vkfence);
 
 #if FVK_ENABLED(FVK_DEBUG_COMMAND_BUFFER)
     if (result != VK_SUCCESS) {
@@ -340,7 +335,7 @@ void VulkanCommands::wait() {
         auto wrapper = mStorage[i].get();
         if (wrapper->buffer() != VK_NULL_HANDLE
                 && mCurrentCommandBufferIndex != static_cast<int8_t>(i)) {
-            fences[count++] = wrapper->fence->getFence();
+            fences[count++] = wrapper->fence.vkfence;
         }
     }
     if (count > 0) {
@@ -361,13 +356,14 @@ void VulkanCommands::gc() {
         if (wrapper->buffer() == VK_NULL_HANDLE) {
             continue;
         }
-        auto const vkfence = wrapper->fence->getFence();
+        auto& cmdfence = wrapper->fence;
+        auto const vkfence = cmdfence.vkfence;
         VkResult const result = vkGetFenceStatus(mDevice, vkfence);
         if (result != VK_SUCCESS) {
             continue;
         }
         fences[count++] = vkfence;
-        wrapper->fence->setValue(VK_SUCCESS);
+        cmdfence.status->set(VK_SUCCESS);
         wrapper->reset();
         mAvailableBufferCount++;
     }
@@ -382,11 +378,11 @@ void VulkanCommands::updateFences() {
     for (size_t i = 0; i < CAPACITY; i++) {
         auto wrapper = mStorage[i].get();
         if (wrapper->buffer() != VK_NULL_HANDLE) {
-            VulkanCmdFence* fence = wrapper->fence.get();
-            if (fence) {
-                VkResult status = vkGetFenceStatus(mDevice, fence->getFence());
+            auto& cmdfence = wrapper->fence;
+            if (cmdfence.vkfence != VK_NULL_HANDLE) {
+                VkResult status = vkGetFenceStatus(mDevice, cmdfence.vkfence);
                 // This is either VK_SUCCESS, VK_NOT_READY, or VK_ERROR_DEVICE_LOST.
-                fence->setValue(status);
+                cmdfence.status->set(status);
             }
         }
     }

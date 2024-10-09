@@ -25,6 +25,7 @@
 
 #include <tuple>
 #include <unordered_map>
+#include <memory>
 
 using namespace bluevk;
 
@@ -54,7 +55,7 @@ struct VulkanPlatformSwapChainImpl : public Platform::SwapChain {
     }
 
     // Non-virtual override-able method
-    VkResult recreate() {
+    VkResult recreate(std::shared_ptr<VulkanFenceStatus> lastCommandBufferStatus) {
         PANIC_PRECONDITION("Should not be called");
         return VK_ERROR_UNKNOWN;
     }
@@ -92,7 +93,7 @@ struct VulkanPlatformSurfaceSwapChain : public VulkanPlatformSwapChainImpl {
     VkResult present(uint32_t index, VkSemaphore finished);
 
     // Non-virtual override-able method
-    VkResult recreate();
+    VkResult recreate(std::shared_ptr<VulkanFenceStatus> lastCommandBufferStatus);
 
     // Non-virtual override-able method
     bool hasResized();
@@ -118,6 +119,8 @@ private:
     bool mUsesRGB = false;
     bool mHasStencil = false;
     bool mSuboptimal;
+
+    std::vector<std::pair<VkSwapchainKHR, std::shared_ptr<VulkanFenceStatus>>> mOldSwapchains;
 };
 
 struct VulkanPlatformHeadlessSwapChain : public VulkanPlatformSwapChainImpl {

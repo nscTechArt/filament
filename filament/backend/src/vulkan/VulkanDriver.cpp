@@ -678,8 +678,8 @@ void VulkanDriver::destroyRenderTarget(Handle<HwRenderTarget> rth) {
 }
 
 void VulkanDriver::createFenceR(Handle<HwFence> fh, int) {
-    VulkanCommandBuffer const& commandBuffer = mCommands.get();
-    mResourceAllocator.construct<VulkanFence>(fh, commandBuffer.fence);
+    auto const& cmdbuf = mCommands.get();
+    mResourceAllocator.construct<VulkanFence>(fh, cmdbuf.fence.status);
 }
 
 void VulkanDriver::createSwapChainR(Handle<HwSwapChain> sch, void* nativeWindow, uint64_t flags) {
@@ -876,8 +876,8 @@ void VulkanDriver::destroyFence(Handle<HwFence> fh) {
 }
 
 FenceStatus VulkanDriver::getFenceStatus(Handle<HwFence> fh) {
-    auto& cmdfence = mResourceAllocator.handle_cast<VulkanFence*>(fh)->fence;
-    if (!cmdfence) {
+    auto fenceStatus = mResourceAllocator.handle_cast<VulkanFence*>(fh)->status;
+    if (!fenceStatus) {
         // If wait is called before a fence actually exists, we return timeout.  This matches the
         // current behavior in OpenGLDriver, but we should eventually reconsider a different error
         // code.
@@ -886,7 +886,7 @@ FenceStatus VulkanDriver::getFenceStatus(Handle<HwFence> fh) {
 
     // Internally we use the VK_INCOMPLETE status to mean "not yet submitted".
     // When this fence gets submitted, its status changes to VK_NOT_READY.
-    if (cmdfence->getStatus() == VK_SUCCESS) {
+    if (fenceStatus->val() == VK_SUCCESS) {
         return FenceStatus::CONDITION_SATISFIED;
     }
 
@@ -1528,8 +1528,10 @@ void VulkanDriver::makeCurrent(Handle<HwSwapChain> drawSch, Handle<HwSwapChain> 
     VulkanSwapChain* swapChain = mCurrentSwapChain
             = mResourceAllocator.handle_cast<VulkanSwapChain*>(drawSch);
 
+    auto& cmdbuf = mCommands.get();
+
     bool resized = false;
-    swapChain->acquire(resized);
+    swapChain->acquire(resized, cmdbuf.fence.status);
 
     if (resized) {
         mFramebufferCache.reset();
@@ -1934,7 +1936,7 @@ void VulkanDriver::beginTimerQuery(Handle<HwTimerQuery> tqh) {
 
 void VulkanDriver::endTimerQuery(Handle<HwTimerQuery> tqh) {
     VulkanTimerQuery* vtq = mResourceAllocator.handle_cast<VulkanTimerQuery*>(tqh);
-    mTimestamps->endQuery(&(mCommands.get()), vtq);
+    mTimestamps->endQuery(&mCommands.get(), vtq);
 }
 
 void VulkanDriver::debugCommandBegin(CommandStream* cmds, bool synchronous, const char* methodName) noexcept {

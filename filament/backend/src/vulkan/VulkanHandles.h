@@ -412,18 +412,18 @@ struct VulkanFence : public HwFence, VulkanResource {
     VulkanFence()
         : VulkanResource(VulkanResourceType::FENCE) {}
 
-    explicit VulkanFence(std::shared_ptr<VulkanCmdFence> fence)
+    explicit VulkanFence(std::shared_ptr<VulkanFenceStatus> status)
         : VulkanResource(VulkanResourceType::FENCE),
-          fence(fence) {}
+          status(status) {}
 
-    std::shared_ptr<VulkanCmdFence> fence;
+    std::shared_ptr<VulkanFenceStatus> status;
 };
 
 struct VulkanTimerQuery : public HwTimerQuery, VulkanThreadSafeResource {
     explicit VulkanTimerQuery(std::tuple<uint32_t, uint32_t> indices);
     ~VulkanTimerQuery();
 
-    void setFence(std::shared_ptr<VulkanCmdFence> fence) noexcept;
+    void setFenceStatus(std::shared_ptr<VulkanFenceStatus> status) noexcept;
 
     bool isCompleted() noexcept;
 
@@ -438,9 +438,7 @@ struct VulkanTimerQuery : public HwTimerQuery, VulkanThreadSafeResource {
 private:
     uint32_t mStartingQueryIndex;
     uint32_t mStoppingQueryIndex;
-
-    std::shared_ptr<VulkanCmdFence> mFence;
-    utils::Mutex mFenceMutex;
+    std::shared_ptr<VulkanFenceStatus> mStatus;
 };
 
 

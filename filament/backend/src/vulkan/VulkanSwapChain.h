@@ -49,7 +49,7 @@ struct VulkanSwapChain : public HwSwapChain, VulkanResource {
 
     void present();
 
-    void acquire(bool& reized);
+    void acquire(bool& reized, std::shared_ptr<VulkanFenceStatus> lastCommandBufferStatus);
 
     inline VulkanTexture* getCurrentColor() const noexcept {
         uint32_t const imageIndex = mCurrentSwapIndex;

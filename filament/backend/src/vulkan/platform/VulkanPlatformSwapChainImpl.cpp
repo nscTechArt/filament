@@ -107,6 +107,8 @@ void VulkanPlatformSwapChainImpl::destroy() {
     mSwapChainBundle.depth = VK_NULL_HANDLE;
 
     // Note: Hardware-backed swapchain images are not owned by us and should not be destroyed.
+    // However, the swapchain itself needs to be destroyed, and that's delayed because it might
+    // still be presenting. See relevant code in create() and present().
     mSwapChainBundle.colors.clear();
 }
 
@@ -131,6 +133,17 @@ VulkanPlatformSurfaceSwapChain::VulkanPlatformSurfaceSwapChain(VulkanContext con
 }
 
 VulkanPlatformSurfaceSwapChain::~VulkanPlatformSurfaceSwapChain() {
+
+    // We need to wait for any lingering swapchains to finish presenting.
+    vkDeviceWaitIdle(mDevice);
+
+    // Clean-up any old swapchains from before
+    for (auto [swapchain, cmdbufStatus] : mOldSwapchains) {
+        assert_invariant(cmdbufStatus->val() == VK_SUCCESS);
+        vkDestroySwapchainKHR(mDevice, swapchain, VKALLOC);
+    }
+    mOldSwapchains.clear();
+    
     vkDestroySwapchainKHR(mDevice, mSwapchain, VKALLOC);
     vkDestroySurfaceKHR(mInstance, mSurface, VKALLOC);
     destroy();
@@ -302,6 +315,18 @@ VkResult VulkanPlatformSurfaceSwapChain::present(uint32_t index, VkSemaphore fin
         FVK_LOGW << "Vulkan Driver: Suboptimal swap chain." << utils::io::endl;
         mSuboptimal = true;
     }
+
+    // Clean-up any old swapchains from before
+    while (!mOldSwapchains.empty()) {
+        auto [swapchain, cmdBufStatus] = mOldSwapchains.back();
+        if (cmdBufStatus->val() != VK_SUCCESS) {
+            break;
+        }
+
+        vkDestroySwapchainKHR(mDevice, swapchain, VKALLOC);
+        mOldSwapchains.pop_back();
+    }
+
     return result;
 }
 
@@ -318,7 +343,14 @@ bool VulkanPlatformSurfaceSwapChain::hasResized() {
 }
 
 // Non-virtual override
-VkResult VulkanPlatformSurfaceSwapChain::recreate() {
+VkResult VulkanPlatformSurfaceSwapChain::recreate(
+        std::shared_ptr<VulkanFenceStatus> lastCommandBufferStatus) {
+    if (mSwapchain) {
+        if (!lastCommandBufferStatus) {
+            lastCommandBufferStatus = std::make_shared<VulkanFenceStatus>(VK_SUCCESS);
+        }
+        mOldSwapchains.push_back(std::make_pair(mSwapchain, lastCommandBufferStatus));
+    }
     destroy();
     return create();
 }

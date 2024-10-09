@@ -24,6 +24,8 @@
 #include "VulkanConstants.h"
 #include "VulkanResources.h"
 
+#include <backend/platforms/VulkanPlatform.h>
+
 #include <utils/Condition.h>
 #include <utils/FixedCapacityVector.h>
 #include <utils/Mutex.h>
@@ -32,6 +34,7 @@
 
 #include <chrono>
 #include <list>
+#include <memory>
 #include <string>
 #include <utility>
 
@@ -61,44 +64,15 @@ private:
 
 // Wrapper to enable use of shared_ptr for implementing shared ownership of low-level Vulkan fences.
 struct VulkanCmdFence {
-    struct SetValueScope {
-    public:
-        ~SetValueScope() {
-            mHolder->mutex.unlock();
-            mHolder->condition.notify_all();
-        }
+    VulkanCmdFence()
+        : vkfence(VK_NULL_HANDLE) {}
 
-    private:
-        SetValueScope(VulkanCmdFence* fenceHolder, VkResult result) :
-            mHolder(fenceHolder) {
-            mHolder->mutex.lock();
-            mHolder->status.store(result);
-        }
-        VulkanCmdFence* mHolder;
-        friend struct VulkanCmdFence;
-    };
+    VulkanCmdFence(VkFence ifence)
+        : status(std::make_shared<VulkanFenceStatus>(VK_INCOMPLETE)),
+          vkfence(ifence) {}
 
-    VulkanCmdFence(VkFence ifence);
-    ~VulkanCmdFence() = default;
-
-    SetValueScope setValue(VkResult value) {
-        return {this, value};
-    }
-
-    VkFence& getFence() {
-        return fence;
-    }
-
-    VkResult getStatus() {
-        std::unique_lock<utils::Mutex> lock(mutex);
-        return status.load(std::memory_order_acquire);
-    }
-
-private:
-    VkFence fence;
-    utils::Condition condition;
-    utils::Mutex mutex;
-    std::atomic<VkResult> status;
+    std::shared_ptr<VulkanFenceStatus> status;
+    VkFence vkfence;
 };
 
 // The submission fence has shared ownership semantics because it is potentially wrapped by a
@@ -119,7 +93,7 @@ struct VulkanCommandBuffer {
     }
 
     inline void reset() {
-        fence.reset();
+        fence = {};
         mResourceManager.clear();
         mPipeline = VK_NULL_HANDLE;
     }
@@ -133,13 +107,13 @@ struct VulkanCommandBuffer {
     }
 
     inline VkCommandBuffer buffer() const {
-        if (fence) {
+        if (fence.vkfence != VK_NULL_HANDLE) {
             return mBuffer;
         }
         return VK_NULL_HANDLE;
     }
 
-    std::shared_ptr<VulkanCmdFence> fence;
+    VulkanCmdFence fence;
 
 private:
     VulkanAcquireOnlyResourceManager mResourceManager;
@@ -164,9 +138,6 @@ public:
 // - Manages a dependency chain of submitted command buffers using VkSemaphore.
 //    - This creates a guarantee of in-order execution.
 //    - Semaphores are recycled to prevent create / destroy churn.
-//
-// - Notifies listeners when recording begins in a new VkCommandBuffer.
-//    - Used by PipelineCache so that it knows when to clear out its shadow state.
 //
 // - Allows 1 user to inject a "dependency" semaphore that stalls the next flush.
 //    - This is used for asynchronous acquisition of a swap chain image, since the GPU

@@ -78,7 +78,7 @@ struct VulkanTextureState : public VulkanResource {
     VkDevice mDevice;
     VmaAllocator mAllocator;
     VulkanCommands* mCommands;
-    std::shared_ptr<VulkanCmdFence> mTransitionFence;
+    std::shared_ptr<VulkanFenceStatus> mTransitionFenceStatus;
 };
 
 
@@ -173,7 +173,7 @@ struct VulkanTexture : public HwTexture, VulkanResource {
     bool transitionLayout(VulkanCommandBuffer* commands, const VkImageSubresourceRange& range,
             VulkanLayout newLayout);
 
-    bool transitionLayout(VkCommandBuffer cmdbuf, std::shared_ptr<VulkanCmdFence> fence,
+    bool transitionLayout(VkCommandBuffer cmdbuf, std::shared_ptr<VulkanFenceStatus> fence,
             VkImageSubresourceRange const& range, VulkanLayout newLayout);
 
     void attachmentToSamplerBarrier(VulkanCommandBuffer* commands,
@@ -192,8 +192,9 @@ struct VulkanTexture : public HwTexture, VulkanResource {
 
     bool transitionReady() {
         VulkanTextureState* state = getSharedState();
-        auto res = !state->mTransitionFence || state->mTransitionFence->getStatus() == VK_SUCCESS;
-        state->mTransitionFence.reset();
+        auto res = !state->mTransitionFenceStatus ||
+                   state->mTransitionFenceStatus->val() == VK_SUCCESS;
+        state->mTransitionFenceStatus.reset();
         return res;
     }
 

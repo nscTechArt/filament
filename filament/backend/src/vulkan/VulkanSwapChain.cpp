@@ -109,7 +109,8 @@ void VulkanSwapChain::present() {
     mIsFirstRenderPass = true;
 }
 
-void VulkanSwapChain::acquire(bool& resized) {
+void VulkanSwapChain::acquire(bool& resized,
+        std::shared_ptr<VulkanFenceStatus> lastCommandBufferStatus) {
     // It's ok to call acquire multiple times due to it being linked to Driver::makeCurrent().
     if (mAcquired) {
         return;
@@ -121,7 +122,7 @@ void VulkanSwapChain::acquire(bool& resized) {
             mCommands->flush();
             mCommands->wait();
         }
-        mPlatform->recreate(swapChain);
+        mPlatform->recreate(swapChain, lastCommandBufferStatus);
         update();
     }
 

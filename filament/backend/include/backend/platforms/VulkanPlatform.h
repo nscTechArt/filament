@@ -24,6 +24,7 @@
 #include <utils/CString.h>
 #include <utils/FixedCapacityVector.h>
 #include <utils/Hash.h>
+#include <utils/Mutex.h>
 #include <utils/PrivateImplementation.h>
 
 #include <tuple>
@@ -40,6 +41,31 @@ using SwapChain = Platform::SwapChain;
  * Private implementation details for the provided vulkan platform.
  */
 struct VulkanPlatformPrivate;
+
+
+/**
+ * Used to share fence status across Filament's vk backend with the swapchain implementation.
+ */
+struct VulkanFenceStatus {
+    // Internally we use the VK_INCOMPLETE status to mean "not yet submitted". When this fence
+    // gets submitted, its status changes to VK_NOT_READY. Finally, when the GPU actually
+    // finishes executing the command buffer, the status changes to VK_SUCCESS.
+    VulkanFenceStatus(VkResult result = VK_INCOMPLETE) { mStatus.store(result); }
+
+    void set(VkResult result) {
+        std::unique_lock<utils::Mutex> lock(mMutex);
+        mStatus.store(result);
+    }
+
+    VkResult val() {
+        std::unique_lock<utils::Mutex> lock(mMutex);
+        return mStatus.load(std::memory_order_consume);
+    }
+
+private:
+    utils::Mutex mMutex;
+    std::atomic<VkResult> mStatus;
+};
 
 /**
  * A Platform interface that creates a Vulkan backend.
@@ -99,7 +125,7 @@ public:
         // Semaphore to be signaled once the image is available.
         VkSemaphore imageReadySemaphore = VK_NULL_HANDLE;
 
-        // A function called right before vkQueueSubmit. After this call, the image must be 
+        // A function called right before vkQueueSubmit. After this call, the image must be
         // available. This pointer can be null if imageReadySemaphore is not VK_NULL_HANDLE.
         std::function<void(SwapChainPtr handle)> explicitImageReadyWait = nullptr;
     };
@@ -200,11 +226,15 @@ public:
     virtual bool hasResized(SwapChainPtr handle);
 
     /**
-     * Carry out a recreation of the swapchain.
-     * @param handle             The handle returned by createSwapChain()
-     * @return                   Result of the recreation
+     * Recreate the swapchain.
+     * @param handle                       The handle returned by createSwapChain()
+     * @param lastCommandbufferStatus      The status of the fence associated with the last command
+     *                                     buffer before this call. We use this to determine if it'safe
+     *                                     ok to delete the old swapchain.
+     * @return                             Result of the recreation
      */
-    virtual VkResult recreate(SwapChainPtr handle);
+    virtual VkResult recreate(SwapChainPtr handle,
+            std::shared_ptr<VulkanFenceStatus> lastCommandBufferStatus);
 
     /**
      * Create a swapchain given a platform window, or if given a null `nativeWindow`, then we

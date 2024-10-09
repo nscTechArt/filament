@@ -537,12 +537,11 @@ VkImageAspectFlags VulkanTexture::getImageAspect() const {
 
 bool VulkanTexture::transitionLayout(VulkanCommandBuffer* commands,
         const VkImageSubresourceRange& range, VulkanLayout newLayout) {
-    return transitionLayout(commands->buffer(), commands->fence, range, newLayout);
+    return transitionLayout(commands->buffer(), commands->fence.status, range, newLayout);
 }
 
-bool VulkanTexture::transitionLayout(
-        VkCommandBuffer cmdbuf, std::shared_ptr<VulkanCmdFence> fence,
-        const VkImageSubresourceRange& range,
+bool VulkanTexture::transitionLayout(VkCommandBuffer cmdbuf,
+        std::shared_ptr<VulkanFenceStatus> fenceStatus, const VkImageSubresourceRange& range,
         VulkanLayout newLayout) {
     auto* const state = getSharedState();
     VulkanLayout const oldLayout = getLayout(range.baseArrayLayer, range.baseMipLevel);
@@ -602,7 +601,7 @@ bool VulkanTexture::transitionLayout(
     setLayout(range, newLayout);
 
     if (hasTransitions) {
-        state->mTransitionFence = fence;
+        state->mTransitionFenceStatus = fenceStatus;
 
 #if FVK_ENABLED(FVK_DEBUG_LAYOUT_TRANSITION)
         FVK_LOGD << "transition texture=" << state->mTextureImage << " (" << range.baseArrayLayer
