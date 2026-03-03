@@ -291,6 +291,7 @@ set(MATERIAL_SRCS
         src/materials/dof/dofTiles.mat
         src/materials/dof/dofTilesSwizzle.mat
         src/materials/evsm/gaussian.mat
+        src/materials/evsm/gaussianMipmap.mat
         src/materials/evsm/vsmMipmap.mat
         src/materials/flare/flare.mat
         src/materials/fog/fog.mat
@@ -654,6 +655,12 @@ add_custom_command(
 add_custom_command(
         OUTPUT "${MATERIAL_DIR}/gaussian.filamat"
         DEPENDS src/materials/evsm/gaussian.fs
+        APPEND
+)
+
+add_custom_command(
+        OUTPUT "${MATERIAL_DIR}/gaussianMipmap.filamat"
+        DEPENDS src/materials/evsm/gaussianMipmap.fs
         APPEND
 )
 
